@@ -5,81 +5,101 @@
 
 /* ===
 ml5 Example
-Stateful LSTM Text Generation Example using p5.js
+LSTM Generator example with p5.js
 This uses a pre-trained model on a corpus of Virginia Woolf
-For more models see: https://github.com/ml5js/ml5-data-and-training/tree/master/models/lstm
+For more models see: https://github.com/ml5js/ml5-data-and-training/tree/master/models/charRNN
 === */
 
 let charRNN;
 let textInput;
+let lengthSlider;
 let tempSlider;
-let startBtn;
-let resetBtn;
-let singleBtn;
-let generating = false;
+let button;
+let runningInference = false;
 
-let canvasHeight = 100;
+let myVoice = new p5.Speech(); // new P5.Speech object
+let textOutput;
 
 function setup() {
   noCanvas();
+
   // Create the LSTM Generator passing it the model directory
   charRNN = ml5.charRNN('./models/dontask/', modelReady);
+
   // Grab the DOM elements
   textInput = select('#textInput');
+  lengthSlider = select('#lenSlider');
   tempSlider = select('#tempSlider');
-  startBtn = select('#start');
-  resetBtn = select('#reset');
-  singleBtn = select('#single');
+  speedSlider = select('#playspeed');
+  pitchSlider = select('#playpitch');
+  button = select('#generate');
+  buttonPlay = select('#playback');
 
   // DOM element events
-  startBtn.mousePressed(generate);
-  resetBtn.mousePressed(resetModel);
-  singleBtn.mousePressed(predict);
+  button.mousePressed(generate);
+  buttonPlay.mousePressed(playback);
+  lengthSlider.input(updateSliders);
   tempSlider.input(updateSliders);
-}
-
-function windowResized() {
-  resizeCanvas(windowWidth, canvasHeight);
+  speedSlider.input(updateSliders);
+  pitchSlider.input(updateSliders);
 }
 
 // Update the slider values
 function updateSliders() {
+  select('#length').html(lengthSlider.value());
   select('#temperature').html(tempSlider.value());
+  select('#speed').html(speedSlider.value());
+  select('#pitch').html(pitchSlider.value());
+  myVoice.setRate(speedSlider.value());
+  myVoice.setPitch(pitchSlider.value());
 }
 
-async function modelReady() {
+function modelReady() {
   select('#status').html('Model Loaded');
-  resetModel();
 }
 
-function resetModel() {
-  charRNN.reset();
-  const seed = select('#textInput').value();
-  charRNN.feed(seed);
-  select('#result').html(seed);
+function playback() {
+	myVoice.stop();
+	myVoice.speak(textOutput);
 }
 
+// Generate new text
 function generate() {
-  if (generating) {
-    generating = false;
-    startBtn.html('Start');
-  } else {
-    generating = true;
-    startBtn.html('Pause');
-    loopRNN();
-  }
-}
+  // prevent starting inference if we've already started another instance
+  // TODO: is there better JS way of doing this?
+ if(!runningInference) {
+    runningInference = true;
 
-async function loopRNN() {
-  while (generating) {
-    await predict();
-  }
-}
+    // Update the status log
+    select('#status').html('Generating...');
 
-async function predict() {
-  let par = select('#result');
-  let temperature = tempSlider.value();
-  let next = await charRNN.predict(temperature);
-  await charRNN.feed(next.sample);
-  par.html(par.html() + next.sample);
+    // Grab the original text
+    let original = textInput.value();
+    // Make it to lower case
+    let txt = original.toLowerCase();
+
+    // Check if there's something to send
+    if (txt.length > 0) {
+      // This is what the LSTM generator needs
+      // Seed text, temperature, length to outputs
+      // TODO: What are the defaults?
+      let data = {
+        seed: txt,
+        temperature: tempSlider.value(),
+        length: lengthSlider.value()
+      };
+
+      // Generate text with the charRNN
+      charRNN.generate(data, gotData);
+
+      // When it's done
+      function gotData(err, result) {
+        // Update the status log
+        select('#status').html('Ready!');
+		textOutput = txt + result.sample;
+        select('#result').html(textOutput );
+        runningInference = false;
+      }
+    }
+  }
 }
